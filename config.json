@@ -1,0 +1,76 @@
+{
+  "scoring_thresholds": {
+    "excellent": 80,
+    "good": 60,
+    "needs_improvement": 40,
+    "poor": 0
+  },
+  "test_parameters": {
+    "simplicity": {
+      "max_nav_elements": 2,
+      "max_text_elements": 50,
+      "max_interactive_elements": 20,
+      "min_headings": 2,
+      "max_headings": 10
+    },
+    "user_centered_design": {
+      "min_focusable_elements": 1,
+      "min_aria_labels": 1
+    },
+    "visibility": {
+      "max_cta_buttons_to_check": 3
+    },
+    "consistency": {
+      "max_colors": 10,
+      "max_fonts": 3,
+      "max_spacing_variations": 5,
+      "max_buttons": 5
+    },
+    "feedback": {
+      "max_forms_to_check": 5
+    },
+    "clarity": {
+      "max_title_length": 60,
+      "max_h1_elements": 1,
+      "unclear_link_texts": ["Click here", "Read more", "Learn more", "More", "..."]
+    },
+    "accessibility": {
+      "min_semantic_elements": 1
+    },
+    "usability": {
+      "max_load_time_ms": 3000
+    },
+    "efficiency": {
+      "max_images": 20,
+      "max_resources": 10,
+      "max_form_inputs": 10
+    },
+    "delight": {
+      "positive_words": ["welcome", "thank", "success", "great", "awesome", "excellent", "amazing", "wonderful", "fantastic"]
+    }
+  },
+  "performance_metrics": {
+    "excellent_load_time": 2000,
+    "good_load_time": 3000,
+    "needs_improvement_load_time": 5000
+  },
+  "responsive_testing": {
+    "viewports": [
+      {"width": 360, "height": 640, "name": "Mobile"},
+      {"width": 768, "height": 1024, "name": "Tablet"},
+      {"width": 1920, "height": 1080, "name": "Desktop"}
+    ]
+  },
+  "accessibility_checks": {
+    "required_alt_text": true,
+    "check_heading_hierarchy": true,
+    "check_form_labels": true,
+    "check_keyboard_navigation": true
+  },
+  "export_options": {
+    "include_performance_metrics": true,
+    "include_meta_tags": true,
+    "include_console_errors": true,
+    "include_recommendations": true
+  }
+} 
