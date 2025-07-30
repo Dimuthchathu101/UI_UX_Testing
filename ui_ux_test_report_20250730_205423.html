@@ -1,0 +1,521 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>UI/UX Test Report - http://example.com</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }
+            
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 40px;
+                text-align: center;
+            }
+            
+            .header h1 {
+                font-size: 2.5em;
+                margin-bottom: 10px;
+                font-weight: 300;
+            }
+            
+            .header p {
+                font-size: 1.2em;
+                opacity: 0.9;
+            }
+            
+            .url-info {
+                background: rgba(255,255,255,0.1);
+                padding: 15px;
+                border-radius: 10px;
+                margin-top: 20px;
+                font-family: monospace;
+                word-break: break-all;
+            }
+            
+            .overall-score {
+                background: white;
+                padding: 40px;
+                text-align: center;
+                border-bottom: 1px solid #eee;
+            }
+            
+            .score-circle {
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                margin: 0 auto 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 2em;
+                font-weight: bold;
+                color: white;
+                position: relative;
+            }
+            
+            .score-circle::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                border-radius: 50%;
+                background: conic-gradient(
+                    #F97316 0deg 210.6deg,
+                    #e5e7eb 210.6deg 360deg
+                );
+                z-index: -1;
+            }
+            
+            .score-label {
+                font-size: 1.5em;
+                color: #666;
+                margin-bottom: 10px;
+            }
+            
+            .scores-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                padding: 40px;
+                background: #f8fafc;
+            }
+            
+            .score-card {
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+                transition: transform 0.3s ease;
+            }
+            
+            .score-card:hover {
+                transform: translateY(-5px);
+            }
+            
+            .score-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+            }
+            
+            .score-header h3 {
+                font-size: 1.1em;
+                color: #374151;
+            }
+            
+            .score-badge {
+                padding: 5px 12px;
+                border-radius: 20px;
+                color: white;
+                font-weight: bold;
+                font-size: 0.9em;
+            }
+            
+            .score-bar {
+                height: 8px;
+                background: #e5e7eb;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-bottom: 10px;
+            }
+            
+            .score-fill {
+                height: 100%;
+                transition: width 0.3s ease;
+            }
+            
+            .score-status {
+                font-size: 0.9em;
+                font-weight: 500;
+            }
+            
+            .content-section {
+                padding: 40px;
+            }
+            
+            .section-title {
+                font-size: 1.8em;
+                color: #374151;
+                margin-bottom: 30px;
+                text-align: center;
+                position: relative;
+            }
+            
+            .section-title::after {
+                content: '';
+                position: absolute;
+                bottom: -10px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 60px;
+                height: 3px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 2px;
+            }
+            
+            .issues-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+                gap: 30px;
+                margin-bottom: 40px;
+            }
+            
+            .issue-section {
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            }
+            
+            .issue-section h3 {
+                color: #374151;
+                margin-bottom: 15px;
+                font-size: 1.2em;
+            }
+            
+            .issue-section ul, .issue-section ol {
+                padding-left: 20px;
+            }
+            
+            .issue-section li {
+                margin-bottom: 12px;
+                line-height: 1.6;
+                padding: 10px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border-left: 4px solid #e5e7eb;
+            }
+            
+            .issue-main {
+                font-weight: 500;
+                color: #374151;
+            }
+            
+            .issue-detail {
+                font-size: 0.9em;
+                color: #6b7280;
+                font-family: 'Courier New', monospace;
+                background: #f3f4f6;
+                padding: 2px 6px;
+                border-radius: 4px;
+                margin-left: 10px;
+            }
+            
+            .no-issues {
+                color: #10B981;
+                font-weight: 500;
+            }
+            
+            .recommendations-section {
+                background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+                padding: 30px;
+                border-radius: 15px;
+                margin-bottom: 30px;
+            }
+            
+            .recommendations-section h3 {
+                color: #92400e;
+                margin-bottom: 20px;
+            }
+            
+            .recommendations-section ol {
+                padding-left: 20px;
+            }
+            
+            .recommendations-section li {
+                margin-bottom: 10px;
+                color: #78350f;
+            }
+            
+            .performance-section {
+                background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+                padding: 30px;
+                border-radius: 15px;
+                margin-bottom: 30px;
+            }
+            
+            .performance-section h3 {
+                color: #1e40af;
+                margin-bottom: 20px;
+            }
+            
+            .metrics-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+            }
+            
+            .metric {
+                background: white;
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+            }
+            
+            .metric-label {
+                display: block;
+                font-size: 0.9em;
+                color: #6b7280;
+                margin-bottom: 5px;
+            }
+            
+            .metric-value {
+                display: block;
+                font-size: 1.2em;
+                font-weight: bold;
+                color: #1e40af;
+            }
+            
+            .footer {
+                background: #374151;
+                color: white;
+                text-align: center;
+                padding: 30px;
+            }
+            
+            .footer p {
+                opacity: 0.8;
+            }
+            
+            @media (max-width: 768px) {
+                .scores-grid {
+                    grid-template-columns: 1fr;
+                }
+                
+                .issues-grid {
+                    grid-template-columns: 1fr;
+                }
+                
+                .header h1 {
+                    font-size: 2em;
+                }
+                
+                .container {
+                    margin: 10px;
+                    border-radius: 15px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎨 UI/UX Test Report</h1>
+                <p>Comprehensive analysis of user interface and user experience design principles</p>
+                <div class="url-info">
+                    <strong>Tested URL:</strong> http://example.com
+                </div>
+            </div>
+            
+            <div class="overall-score">
+                <div class="score-label">Overall Score</div>
+                <div class="score-circle" style="background: #F97316">
+                    58.5
+                </div>
+                <p style="color: #666; font-size: 1.1em;">🟠 NEEDS IMPROVEMENT</p>
+            </div>
+            
+            <div class="scores-grid">
+                
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Simplicity</h3>
+                <span class="score-badge" style="background-color: #F59E0B">60/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 60%; background-color: #F59E0B"></div>
+            </div>
+            <div class="score-status" style="color: #F59E0B">🟡 GOOD</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>User-Centered Design</h3>
+                <span class="score-badge" style="background-color: #F59E0B">75/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 75%; background-color: #F59E0B"></div>
+            </div>
+            <div class="score-status" style="color: #F59E0B">🟡 GOOD</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Visibility</h3>
+                <span class="score-badge" style="background-color: #EF4444">25/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 25%; background-color: #EF4444"></div>
+            </div>
+            <div class="score-status" style="color: #EF4444">🔴 POOR</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Consistency</h3>
+                <span class="score-badge" style="background-color: #10B981">100/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 100%; background-color: #10B981"></div>
+            </div>
+            <div class="score-status" style="color: #10B981">🟢 EXCELLENT</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Feedback</h3>
+                <span class="score-badge" style="background-color: #EF4444">25/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 25%; background-color: #EF4444"></div>
+            </div>
+            <div class="score-status" style="color: #EF4444">🔴 POOR</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Clarity</h3>
+                <span class="score-badge" style="background-color: #10B981">100/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 100%; background-color: #10B981"></div>
+            </div>
+            <div class="score-status" style="color: #10B981">🟢 EXCELLENT</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Accessibility</h3>
+                <span class="score-badge" style="background-color: #F59E0B">75/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 75%; background-color: #F59E0B"></div>
+            </div>
+            <div class="score-status" style="color: #F59E0B">🟡 GOOD</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Usability</h3>
+                <span class="score-badge" style="background-color: #EF4444">25/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 25%; background-color: #EF4444"></div>
+            </div>
+            <div class="score-status" style="color: #EF4444">🔴 POOR</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Efficiency</h3>
+                <span class="score-badge" style="background-color: #F59E0B">75/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 75%; background-color: #F59E0B"></div>
+            </div>
+            <div class="score-status" style="color: #F59E0B">🟡 GOOD</div>
+        </div>
+        
+        <div class="score-card">
+            <div class="score-header">
+                <h3>Delight</h3>
+                <span class="score-badge" style="background-color: #EF4444">25/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: 25%; background-color: #EF4444"></div>
+            </div>
+            <div class="score-status" style="color: #EF4444">🔴 POOR</div>
+        </div>
+        
+            </div>
+            
+            <div class="content-section">
+                <h2 class="section-title">📋 Detailed Analysis</h2>
+                
+                <div class="issues-grid">
+                    
+            <div class="issue-section">
+                <h3>♿ Accessibility Issues</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            
+                    
+            <div class="issue-section">
+                <h3>📱 Responsiveness Issues</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            
+                    
+            <div class="issue-section">
+                <h3>🔗 Broken Links</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            
+                    
+            <div class="issue-section">
+                <h3>🖼️ Broken Images</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            
+                    
+            <div class="issue-section">
+                <h3>⚠️ Console Errors</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            
+                </div>
+                
+                <div class="recommendations-section"><h3>💡 Priority Recommendations</h3><ol><li>Add whitespace for better visual breathing room</li><li>Improve heading structure for better content organization</li><li>Add ARIA labels for better screen reader support</li><li>Verify color contrast ratios meet WCAG guidelines</li><li>Add clear call-to-action buttons for important tasks</li><li>Ensure navigation is clearly visible and accessible</li><li>Add form validation with clear feedback messages</li><li>Add loading indicators for better user feedback</li><li>Add hover effects for interactive elements</li><li>Add message containers for user feedback</li></ol></div>
+                
+            </div>
+            
+            <div class="footer">
+                <p>Report generated on July 30, 2025 at 08:54 PM</p>
+                <p>UI/UX Testing Tool - Comprehensive Design Analysis</p>
+            </div>
+        </div>
+        
+        <script>
+            // Add animation to score bars
+            document.addEventListener('DOMContentLoaded', function() {
+                const scoreFills = document.querySelectorAll('.score-fill');
+                scoreFills.forEach(fill => {
+                    const width = fill.style.width;
+                    fill.style.width = '0%';
+                    setTimeout(() => {
+                        fill.style.width = width;
+                    }, 500);
+                });
+            });
+        </script>
+    </body>
+    </html>
+    

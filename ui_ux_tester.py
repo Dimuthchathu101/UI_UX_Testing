@@ -3,6 +3,7 @@ import requests
 import json
 import argparse
 import os
+import base64
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -543,13 +544,43 @@ def check_accessibility(driver, results):
         alt = img.get_attribute("alt")
         if alt is None or alt.strip() == "":
             src = img.get_attribute("src") or "unknown source"
-            results["accessibility_issues"].append(f"Missing alt text: {src}")
+            # Get element position and line info
+            line_info = driver.execute_script("""
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const tagName = element.tagName.toLowerCase();
+                const className = element.className || '';
+                const id = element.id || '';
+                return {
+                    tag: tagName,
+                    class: className,
+                    id: id,
+                    position: {x: Math.round(rect.x), y: Math.round(rect.y)},
+                    size: {width: Math.round(rect.width), height: Math.round(rect.height)}
+                };
+            """, img)
+            results["accessibility_issues"].append(
+                f"Missing alt text: {src} | Element: {line_info['tag']}{'#' + line_info['id'] if line_info['id'] else ''}{'.' + line_info['class'] if line_info['class'] else ''} | Position: ({line_info['position']['x']}, {line_info['position']['y']})"
+            )
 
     # Check for proper heading hierarchy
     headings = driver.find_elements(By.XPATH, "//h1|//h2|//h3|//h4|//h5|//h6")
     levels = [int(h.tag_name[1]) for h in headings]
     if levels and min(levels) > 1:
-        results["accessibility_issues"].append("No H1 heading found")
+        # Get first heading info
+        first_heading = headings[0]
+        heading_info = driver.execute_script("""
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            return {
+                tag: element.tagName.toLowerCase(),
+                text: element.textContent.substring(0, 50) + '...' if element.textContent.length > 50 else element.textContent,
+                position: {x: Math.round(rect.x), y: Math.round(rect.y)}
+            };
+        """, first_heading)
+        results["accessibility_issues"].append(
+            f"No H1 heading found | First heading: {heading_info['tag']} '{heading_info['text']}' | Position: ({heading_info['position']['x']}, {heading_info['position']['y']})"
+        )
     
     # Check form labels
     inputs = driver.find_elements(By.TAG_NAME, "input")
@@ -558,8 +589,18 @@ def check_accessibility(driver, results):
             if not driver.execute_script(
                 "return arguments[0].labels.length > 0;", input_elem
             ):
+                input_info = driver.execute_script("""
+                    const element = arguments[0];
+                    const rect = element.getBoundingClientRect();
+                    return {
+                        type: element.type,
+                        name: element.name || '',
+                        placeholder: element.placeholder || '',
+                        position: {x: Math.round(rect.x), y: Math.round(rect.y)}
+                    };
+                """, input_elem)
                 results["accessibility_issues"].append(
-                    f"Input missing label: {input_elem.get_attribute('outerHTML')[:50]}"
+                    f"Input missing label | Type: {input_info['type']} | Name: {input_info['name']} | Placeholder: {input_info['placeholder']} | Position: ({input_info['position']['x']}, {input_info['position']['y']})"
                 )
 
 def check_responsiveness(driver, results):
@@ -581,8 +622,38 @@ def check_responsiveness(driver, results):
             "return document.documentElement.scrollWidth"
         )
         if scroll_width > width:
+            # Find elements causing overflow
+            overflow_elements = driver.execute_script("""
+                const viewportWidth = arguments[0];
+                const elements = document.querySelectorAll('*');
+                const overflowElements = [];
+                
+                elements.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > viewportWidth || rect.right > viewportWidth) {
+                        overflowElements.push({
+                            tag: el.tagName.toLowerCase(),
+                            class: el.className || '',
+                            id: el.id || '',
+                            width: Math.round(rect.width),
+                            right: Math.round(rect.right),
+                            text: el.textContent.substring(0, 30) + '...' if el.textContent.length > 30 else el.textContent
+                        });
+                    }
+                });
+                
+                return overflowElements.slice(0, 5); // Return top 5 overflow elements
+            """, width)
+            
+            overflow_info = ""
+            if overflow_elements:
+                overflow_info = " | Overflow elements: " + ", ".join([
+                    f"{elem['tag']}{'#' + elem['id'] if elem['id'] else ''}{'.' + elem['class'] if elem['class'] else ''} (width: {elem['width']}px)"
+                    for elem in overflow_elements[:3]
+                ])
+            
             results["responsive_issues"].append(
-                f"Horizontal scrolling at {width}x{height} (content width: {scroll_width})"
+                f"Horizontal scrolling at {width}x{height} (content width: {scroll_width}){overflow_info}"
             )
 
     # Restore original size
@@ -597,6 +668,18 @@ def check_broken_links(driver, results):
         if href and "#" not in href and href not in unique_links:
             unique_links.add(href)
             
+            # Get link element info
+            link_info = driver.execute_script("""
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                return {
+                    text: element.textContent.trim() || '[No text]',
+                    class: element.className || '',
+                    id: element.id || '',
+                    position: {x: Math.round(rect.x), y: Math.round(rect.y)}
+                };
+            """, link)
+            
             try:
                 response = requests.head(
                     href,
@@ -606,16 +689,31 @@ def check_broken_links(driver, results):
                 )
                 if response.status_code >= 400:
                     results["broken_links"].append(
-                        f"Broken link ({response.status_code}): {href}"
+                        f"Broken link ({response.status_code}): {href} | Text: '{link_info['text']}' | Element: a{'#' + link_info['id'] if link_info['id'] else ''}{'.' + link_info['class'] if link_info['class'] else ''} | Position: ({link_info['position']['x']}, {link_info['position']['y']})"
                     )
             except requests.RequestException:
-                results["broken_links"].append(f"Inaccessible link: {href}")
+                results["broken_links"].append(
+                    f"Inaccessible link: {href} | Text: '{link_info['text']}' | Element: a{'#' + link_info['id'] if link_info['id'] else ''}{'.' + link_info['class'] if link_info['class'] else ''} | Position: ({link_info['position']['x']}, {link_info['position']['y']})"
+                )
 
 def check_broken_images(driver, results):
     images = driver.find_elements(By.TAG_NAME, "img")
     for img in images:
         src = img.get_attribute("src")
         if src:
+            # Get image element info
+            img_info = driver.execute_script("""
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                return {
+                    alt: element.alt || '[No alt text]',
+                    class: element.className || '',
+                    id: element.id || '',
+                    position: {x: Math.round(rect.x), y: Math.round(rect.y)},
+                    size: {width: Math.round(rect.width), height: Math.round(rect.height)}
+                };
+            """, img)
+            
             try:
                 response = requests.head(
                     src,
@@ -625,13 +723,39 @@ def check_broken_images(driver, results):
                 )
                 if response.status_code >= 400:
                     results["broken_images"].append(
-                        f"Broken image ({response.status_code}): {src}"
+                        f"Broken image ({response.status_code}): {src} | Alt: '{img_info['alt']}' | Element: img{'#' + img_info['id'] if img_info['id'] else ''}{'.' + img_info['class'] if img_info['class'] else ''} | Position: ({img_info['position']['x']}, {img_info['position']['y']}) | Size: {img_info['size']['width']}x{img_info['size']['height']}px"
                     )
             except requests.RequestException:
-                results["broken_images"].append(f"Inaccessible image: {src}")
+                results["broken_images"].append(
+                    f"Inaccessible image: {src} | Alt: '{img_info['alt']}' | Element: img{'#' + img_info['id'] if img_info['id'] else ''}{'.' + img_info['class'] if img_info['class'] else ''} | Position: ({img_info['position']['x']}, {img_info['position']['y']}) | Size: {img_info['size']['width']}x{img_info['size']['height']}px"
+                )
 
 def get_console_errors(driver):
-    return driver.get_log("browser")
+    errors = driver.get_log("browser")
+    detailed_errors = []
+    
+    for error in errors:
+        # Get additional context about the error
+        error_details = driver.execute_script("""
+            return {
+                url: window.location.href,
+                title: document.title,
+                userAgent: navigator.userAgent,
+                timestamp: new Date().toISOString()
+            };
+        """)
+        
+        detailed_error = {
+            'message': error['message'],
+            'level': error['level'],
+            'timestamp': error['timestamp'],
+            'url': error_details['url'],
+            'page_title': error_details['title'],
+            'user_agent': error_details['userAgent']
+        }
+        detailed_errors.append(detailed_error)
+    
+    return detailed_errors
 
 def get_performance_metrics(driver):
     metrics = driver.execute_script("""
@@ -657,6 +781,73 @@ def get_meta_tags(driver):
         });
         return metas;
     """)
+
+def capture_element_screenshot(driver, element, issue_type, filename_prefix):
+    """Capture screenshot of a specific element with highlighting"""
+    try:
+        # Highlight the element temporarily
+        driver.execute_script("""
+            const element = arguments[0];
+            const originalStyle = element.style.outline;
+            element.style.outline = '3px solid red';
+            element.style.outlineOffset = '2px';
+            element.style.backgroundColor = 'rgba(255, 0, 0, 0.1)';
+            return originalStyle;
+        """, element)
+        
+        time.sleep(0.5)  # Wait for highlight to be visible
+        
+        # Get element position and size
+        rect = element.rect
+        location = element.location
+        
+        # Capture full page screenshot
+        screenshot = driver.get_screenshot_as_png()
+        
+        # Remove highlighting
+        driver.execute_script("""
+            const element = arguments[0];
+            const originalStyle = arguments[1];
+            element.style.outline = originalStyle;
+            element.style.outlineOffset = '';
+            element.style.backgroundColor = '';
+        """, element, driver.execute_script("return arguments[0].style.outline;", element))
+        
+        # Convert to base64 for HTML embedding
+        screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+        
+        return {
+            'base64': screenshot_b64,
+            'filename': f"{filename_prefix}_{issue_type}_{int(time.time())}.png",
+            'position': {'x': location['x'], 'y': location['y']},
+            'size': {'width': rect['width'], 'height': rect['height']}
+        }
+    except Exception as e:
+        print(f"Error capturing screenshot: {e}")
+        return None
+
+def capture_area_screenshot(driver, x, y, width, height, issue_type, filename_prefix):
+    """Capture screenshot of a specific area of the page"""
+    try:
+        # Scroll to the area
+        driver.execute_script(f"window.scrollTo({x}, {y - 100});")
+        time.sleep(0.5)
+        
+        # Capture full page screenshot
+        screenshot = driver.get_screenshot_as_png()
+        
+        # Convert to base64 for HTML embedding
+        screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+        
+        return {
+            'base64': screenshot_b64,
+            'filename': f"{filename_prefix}_{issue_type}_{int(time.time())}.png",
+            'position': {'x': x, 'y': y},
+            'size': {'width': width, 'height': height}
+        }
+    except Exception as e:
+        print(f"Error capturing area screenshot: {e}")
+        return None
 
 def generate_report(results):
     print("\n" + "="*50)
@@ -904,11 +1095,496 @@ def export_results(results, filename=None):
     print(f"\nResults exported to: {filename}")
     return filename
 
+def generate_html_report(results, filename=None):
+    """Generate an attractive HTML report"""
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"ui_ux_test_report_{timestamp}.html"
+    
+    # Calculate overall score
+    scores = {
+        "Simplicity": results["simplicity_score"],
+        "User-Centered Design": results["user_centered_design_score"],
+        "Visibility": results["visibility_score"],
+        "Consistency": results["consistency_score"],
+        "Feedback": results["feedback_score"],
+        "Clarity": results["clarity_score"],
+        "Accessibility": results["accessibility_score"],
+        "Usability": results["usability_score"],
+        "Efficiency": results["efficiency_score"],
+        "Delight": results["delight_score"]
+    }
+    
+    total_score = sum(scores.values())
+    average_score = total_score / len(scores)
+    
+    # Get status and color for each score
+    def get_score_status(score):
+        if score >= 80:
+            return "EXCELLENT", "#10B981", "🟢"
+        elif score >= 60:
+            return "GOOD", "#F59E0B", "🟡"
+        elif score >= 40:
+            return "NEEDS IMPROVEMENT", "#F97316", "🟠"
+        else:
+            return "POOR", "#EF4444", "🔴"
+    
+    # Generate score cards HTML
+    score_cards_html = ""
+    for principle, score in scores.items():
+        status, color, emoji = get_score_status(score)
+        score_cards_html += f"""
+        <div class="score-card">
+            <div class="score-header">
+                <h3>{principle}</h3>
+                <span class="score-badge" style="background-color: {color}">{score}/100</span>
+            </div>
+            <div class="score-bar">
+                <div class="score-fill" style="width: {score}%; background-color: {color}"></div>
+            </div>
+            <div class="score-status" style="color: {color}">{emoji} {status}</div>
+        </div>
+        """
+    
+    # Generate issues HTML
+    def generate_issues_html(issues, title, icon):
+        if not issues:
+            return f"""
+            <div class="issue-section">
+                <h3>{icon} {title}</h3>
+                <p class="no-issues">✅ No issues found</p>
+            </div>
+            """
+        
+        issues_html = f'<div class="issue-section"><h3>{icon} {title}</h3><ul class="issue-list">'
+        for issue in issues:
+            # Format the issue with better styling for detailed information
+            formatted_issue = issue.replace(' | ', '</span><br><span class="issue-detail">')
+            issues_html += f'<li><span class="issue-main">{formatted_issue}</span></li>'
+        issues_html += '</ul></div>'
+        return issues_html
+    
+    # Generate recommendations HTML
+    recommendations_html = ""
+    if results["detailed_recommendations"]:
+        recommendations_html = '<div class="recommendations-section"><h3>💡 Priority Recommendations</h3><ol>'
+        for i, rec in enumerate(results["detailed_recommendations"][:10], 1):
+            recommendations_html += f'<li>{rec}</li>'
+        recommendations_html += '</ol></div>'
+    
+    # Performance metrics HTML
+    performance_html = ""
+    if results["performance_metrics"]:
+        metrics = results["performance_metrics"]
+        performance_html = """
+        <div class="performance-section">
+            <h3>📊 Performance Metrics</h3>
+            <div class="metrics-grid">
+        """
+        for key, value in metrics.items():
+            if value is not None:
+                performance_html += f'<div class="metric"><span class="metric-label">{key.title()}</span><span class="metric-value">{value}ms</span></div>'
+        performance_html += '</div></div>'
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>UI/UX Test Report - {results['url']}</title>
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }}
+            
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            
+            .header {{
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 40px;
+                text-align: center;
+            }}
+            
+            .header h1 {{
+                font-size: 2.5em;
+                margin-bottom: 10px;
+                font-weight: 300;
+            }}
+            
+            .header p {{
+                font-size: 1.2em;
+                opacity: 0.9;
+            }}
+            
+            .url-info {{
+                background: rgba(255,255,255,0.1);
+                padding: 15px;
+                border-radius: 10px;
+                margin-top: 20px;
+                font-family: monospace;
+                word-break: break-all;
+            }}
+            
+            .overall-score {{
+                background: white;
+                padding: 40px;
+                text-align: center;
+                border-bottom: 1px solid #eee;
+            }}
+            
+            .score-circle {{
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                margin: 0 auto 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 2em;
+                font-weight: bold;
+                color: white;
+                position: relative;
+            }}
+            
+            .score-circle::before {{
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                border-radius: 50%;
+                background: conic-gradient(
+                    {get_score_status(average_score)[1]} 0deg {average_score * 3.6}deg,
+                    #e5e7eb {average_score * 3.6}deg 360deg
+                );
+                z-index: -1;
+            }}
+            
+            .score-label {{
+                font-size: 1.5em;
+                color: #666;
+                margin-bottom: 10px;
+            }}
+            
+            .scores-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                padding: 40px;
+                background: #f8fafc;
+            }}
+            
+            .score-card {{
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+                transition: transform 0.3s ease;
+            }}
+            
+            .score-card:hover {{
+                transform: translateY(-5px);
+            }}
+            
+            .score-header {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+            }}
+            
+            .score-header h3 {{
+                font-size: 1.1em;
+                color: #374151;
+            }}
+            
+            .score-badge {{
+                padding: 5px 12px;
+                border-radius: 20px;
+                color: white;
+                font-weight: bold;
+                font-size: 0.9em;
+            }}
+            
+            .score-bar {{
+                height: 8px;
+                background: #e5e7eb;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-bottom: 10px;
+            }}
+            
+            .score-fill {{
+                height: 100%;
+                transition: width 0.3s ease;
+            }}
+            
+            .score-status {{
+                font-size: 0.9em;
+                font-weight: 500;
+            }}
+            
+            .content-section {{
+                padding: 40px;
+            }}
+            
+            .section-title {{
+                font-size: 1.8em;
+                color: #374151;
+                margin-bottom: 30px;
+                text-align: center;
+                position: relative;
+            }}
+            
+            .section-title::after {{
+                content: '';
+                position: absolute;
+                bottom: -10px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 60px;
+                height: 3px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 2px;
+            }}
+            
+            .issues-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+                gap: 30px;
+                margin-bottom: 40px;
+            }}
+            
+            .issue-section {{
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            }}
+            
+            .issue-section h3 {{
+                color: #374151;
+                margin-bottom: 15px;
+                font-size: 1.2em;
+            }}
+            
+            .issue-section ul, .issue-section ol {{
+                padding-left: 20px;
+            }}
+            
+            .issue-section li {{
+                margin-bottom: 12px;
+                line-height: 1.6;
+                padding: 10px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border-left: 4px solid #e5e7eb;
+            }}
+            
+            .issue-main {{
+                font-weight: 500;
+                color: #374151;
+            }}
+            
+            .issue-detail {{
+                font-size: 0.9em;
+                color: #6b7280;
+                font-family: 'Courier New', monospace;
+                background: #f3f4f6;
+                padding: 2px 6px;
+                border-radius: 4px;
+                margin-left: 10px;
+            }}
+            
+            .no-issues {{
+                color: #10B981;
+                font-weight: 500;
+            }}
+            
+            .recommendations-section {{
+                background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+                padding: 30px;
+                border-radius: 15px;
+                margin-bottom: 30px;
+            }}
+            
+            .recommendations-section h3 {{
+                color: #92400e;
+                margin-bottom: 20px;
+            }}
+            
+            .recommendations-section ol {{
+                padding-left: 20px;
+            }}
+            
+            .recommendations-section li {{
+                margin-bottom: 10px;
+                color: #78350f;
+            }}
+            
+            .performance-section {{
+                background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+                padding: 30px;
+                border-radius: 15px;
+                margin-bottom: 30px;
+            }}
+            
+            .performance-section h3 {{
+                color: #1e40af;
+                margin-bottom: 20px;
+            }}
+            
+            .metrics-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+            }}
+            
+            .metric {{
+                background: white;
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+            }}
+            
+            .metric-label {{
+                display: block;
+                font-size: 0.9em;
+                color: #6b7280;
+                margin-bottom: 5px;
+            }}
+            
+            .metric-value {{
+                display: block;
+                font-size: 1.2em;
+                font-weight: bold;
+                color: #1e40af;
+            }}
+            
+            .footer {{
+                background: #374151;
+                color: white;
+                text-align: center;
+                padding: 30px;
+            }}
+            
+            .footer p {{
+                opacity: 0.8;
+            }}
+            
+            @media (max-width: 768px) {{
+                .scores-grid {{
+                    grid-template-columns: 1fr;
+                }}
+                
+                .issues-grid {{
+                    grid-template-columns: 1fr;
+                }}
+                
+                .header h1 {{
+                    font-size: 2em;
+                }}
+                
+                .container {{
+                    margin: 10px;
+                    border-radius: 15px;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎨 UI/UX Test Report</h1>
+                <p>Comprehensive analysis of user interface and user experience design principles</p>
+                <div class="url-info">
+                    <strong>Tested URL:</strong> {results['url']}
+                </div>
+            </div>
+            
+            <div class="overall-score">
+                <div class="score-label">Overall Score</div>
+                <div class="score-circle" style="background: {get_score_status(average_score)[1]}">
+                    {average_score:.1f}
+                </div>
+                <p style="color: #666; font-size: 1.1em;">{get_score_status(average_score)[2]} {get_score_status(average_score)[0]}</p>
+            </div>
+            
+            <div class="scores-grid">
+                {score_cards_html}
+            </div>
+            
+            <div class="content-section">
+                <h2 class="section-title">📋 Detailed Analysis</h2>
+                
+                <div class="issues-grid">
+                    {generate_issues_html(results["accessibility_issues"], "Accessibility Issues", "♿")}
+                    {generate_issues_html(results["responsive_issues"], "Responsiveness Issues", "📱")}
+                    {generate_issues_html(results["broken_links"], "Broken Links", "🔗")}
+                    {generate_issues_html(results["broken_images"], "Broken Images", "🖼️")}
+                    {generate_issues_html([f"{error['level'].upper()}: {error['message']} | URL: {error['url']} | Page: {error['page_title']}" for error in results["console_errors"]], "Console Errors", "⚠️")}
+                </div>
+                
+                {recommendations_html}
+                {performance_html}
+            </div>
+            
+            <div class="footer">
+                <p>Report generated on {datetime.now().strftime("%B %d, %Y at %I:%M %p")}</p>
+                <p>UI/UX Testing Tool - Comprehensive Design Analysis</p>
+            </div>
+        </div>
+        
+        <script>
+            // Add animation to score bars
+            document.addEventListener('DOMContentLoaded', function() {{
+                const scoreFills = document.querySelectorAll('.score-fill');
+                scoreFills.forEach(fill => {{
+                    const width = fill.style.width;
+                    fill.style.width = '0%';
+                    setTimeout(() => {{
+                        fill.style.width = width;
+                    }}, 500);
+                }});
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"\nHTML report generated: {filename}")
+    return filename
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="UI/UX Testing Tool")
     parser.add_argument("--url", help="Website URL to test")
     parser.add_argument("--export", action="store_true", help="Export results to JSON file")
-    parser.add_argument("--output", help="Output filename for JSON export")
+    parser.add_argument("--html", action="store_true", help="Generate HTML report")
+    parser.add_argument("--output", help="Output filename for export")
     
     args = parser.parse_args()
     
@@ -928,5 +1604,8 @@ if __name__ == "__main__":
     
     if args.export:
         export_results(results, args.output)
+    
+    if args.html:
+        generate_html_report(results, args.output)
     
     print("\nTest completed!") 
