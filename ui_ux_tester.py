@@ -25,6 +25,11 @@ def run_ui_ux_test(url):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--enable-logging")
     chrome_options.add_argument("--v=1")
+    chrome_options.add_argument("--enable-javascript")
+    chrome_options.add_argument("--disable-web-security")  # Allow cross-origin requests for better error detection
+    chrome_options.add_argument("--allow-running-insecure-content")
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
     
     # Initialize WebDriver
     service = Service(ChromeDriverManager().install())
@@ -49,7 +54,8 @@ def run_ui_ux_test(url):
         "console_errors": [],
         "performance_metrics": {},
         "meta_tags": {},
-        "detailed_recommendations": []
+        "detailed_recommendations": [],
+        "screenshots": []
     }
 
     try:
@@ -58,6 +64,106 @@ def run_ui_ux_test(url):
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
+        
+        # Set up JavaScript error listener to capture console errors
+        driver.execute_script("""
+            // Initialize error capture array
+            window.capturedErrors = [];
+            
+            // Override console.error to capture errors
+            const originalConsoleError = console.error;
+            console.error = function(...args) {
+                const errorInfo = {
+                    message: args.join(' '),
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    source: 'console.error'
+                };
+                window.capturedErrors.push(errorInfo);
+                originalConsoleError.apply(console, args);
+            };
+            
+            // Override console.warn to capture warnings
+            const originalConsoleWarn = console.warn;
+            console.warn = function(...args) {
+                const errorInfo = {
+                    message: args.join(' '),
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    source: 'console.warn'
+                };
+                window.capturedErrors.push(errorInfo);
+                originalConsoleWarn.apply(console, args);
+            };
+            
+            // Add global error handler
+            window.addEventListener('error', function(event) {
+                const errorInfo = {
+                    message: event.message || 'Unknown error',
+                    filename: event.filename || 'Unknown file',
+                    line: event.lineno || 'Unknown',
+                    column: event.colno || 'Unknown',
+                    stack: event.error ? event.error.stack : 'No stack trace available',
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    source: 'window.error'
+                };
+                window.capturedErrors.push(errorInfo);
+            });
+            
+            // Add unhandled promise rejection handler
+            window.addEventListener('unhandledrejection', function(event) {
+                const errorInfo = {
+                    message: event.reason ? event.reason.toString() : 'Unhandled promise rejection',
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    source: 'unhandledrejection'
+                };
+                window.capturedErrors.push(errorInfo);
+            });
+            
+            // Also capture any existing errors that might have occurred during page load
+            if (window.performance && window.performance.getEntriesByType) {
+                const navigationEntries = window.performance.getEntriesByType('navigation');
+                if (navigationEntries.length > 0) {
+                    const navEntry = navigationEntries[0];
+                    if (navEntry.loadEventEnd > 0) {
+                        // Page has loaded, check for any existing console errors
+                        console.error('Page load completed - checking for existing errors');
+                    }
+                }
+            }
+        """)
+        
+        # Wait a bit for any page load errors to occur
+        time.sleep(2)
+        
+        # Trigger some common JavaScript errors to test error capture
+        driver.execute_script("""
+            // Test error capture by triggering some common errors
+            try {
+                // Test console.error capture
+                console.error('Test console error capture from UI/UX tester');
+                console.warn('Test console warning capture from UI/UX tester');
+                
+                // Test undefined variable error
+                console.log(undefinedVariable);
+            } catch (e) {
+                // This error should be captured by our error listener
+                console.error('Test error caught:', e.message);
+            }
+            
+            // Test promise rejection
+            Promise.reject(new Error('Test promise rejection from UI/UX tester'));
+            
+            // Test async error
+            setTimeout(() => {
+                throw new Error('Test async error from UI/UX tester');
+            }, 100);
+        """)
+        
+        # Wait a bit more for async errors to be captured
+        time.sleep(1)
         
         # Test all UI/UX principles
         test_simplicity(driver, results)
@@ -72,15 +178,21 @@ def run_ui_ux_test(url):
         test_delight(driver, results)
         
         # Original tests
+        print("DEBUG: Starting original tests...")
         check_accessibility(driver, results)
         check_responsiveness(driver, results)
         check_broken_links(driver, results)
         check_broken_images(driver, results)
+        print("DEBUG: About to call get_console_errors...")
         results["console_errors"] = get_console_errors(driver)
+        print("DEBUG: get_console_errors completed")
         results["performance_metrics"] = get_performance_metrics(driver)
         results["meta_tags"] = get_meta_tags(driver)
         
     except Exception as e:
+        print(f"DEBUG: Exception caught: {str(e)}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
         results["error"] = f"Test failed: {str(e)}"
     finally:
         driver.quit()
@@ -559,6 +671,12 @@ def check_accessibility(driver, results):
                     size: {width: Math.round(rect.width), height: Math.round(rect.height)}
                 };
             """, img)
+            
+            # Capture screenshot of the image
+            screenshot = capture_element_screenshot(driver, img, "missing_alt", "accessibility")
+            if screenshot:
+                results["screenshots"].append(screenshot)
+            
             results["accessibility_issues"].append(
                 f"Missing alt text: {src} | Element: {line_info['tag']}{'#' + line_info['id'] if line_info['id'] else ''}{'.' + line_info['class'] if line_info['class'] else ''} | Position: ({line_info['position']['x']}, {line_info['position']['y']})"
             )
@@ -578,6 +696,12 @@ def check_accessibility(driver, results):
                 position: {x: Math.round(rect.x), y: Math.round(rect.y)}
             };
         """, first_heading)
+        
+        # Capture screenshot of the heading area
+        screenshot = capture_element_screenshot(driver, first_heading, "no_h1_heading", "accessibility")
+        if screenshot:
+            results["screenshots"].append(screenshot)
+        
         results["accessibility_issues"].append(
             f"No H1 heading found | First heading: {heading_info['tag']} '{heading_info['text']}' | Position: ({heading_info['position']['x']}, {heading_info['position']['y']})"
         )
@@ -599,6 +723,12 @@ def check_accessibility(driver, results):
                         position: {x: Math.round(rect.x), y: Math.round(rect.y)}
                     };
                 """, input_elem)
+                
+                # Capture screenshot of the input field
+                screenshot = capture_element_screenshot(driver, input_elem, "missing_label", "accessibility")
+                if screenshot:
+                    results["screenshots"].append(screenshot)
+                
                 results["accessibility_issues"].append(
                     f"Input missing label | Type: {input_info['type']} | Name: {input_info['name']} | Placeholder: {input_info['placeholder']} | Position: ({input_info['position']['x']}, {input_info['position']['y']})"
                 )
@@ -637,7 +767,7 @@ def check_responsiveness(driver, results):
                             id: el.id || '',
                             width: Math.round(rect.width),
                             right: Math.round(rect.right),
-                            text: el.textContent.substring(0, 30) + '...' if el.textContent.length > 30 else el.textContent
+                            text: el.textContent.length > 30 ? el.textContent.substring(0, 30) + '...' : el.textContent
                         });
                     }
                 });
@@ -651,6 +781,21 @@ def check_responsiveness(driver, results):
                     f"{elem['tag']}{'#' + elem['id'] if elem['id'] else ''}{'.' + elem['class'] if elem['class'] else ''} (width: {elem['width']}px)"
                     for elem in overflow_elements[:3]
                 ])
+                
+                # Capture screenshot of the overflow area
+                if overflow_elements:
+                    first_overflow = overflow_elements[0]
+                    screenshot = capture_area_screenshot(
+                        driver, 
+                        first_overflow.get('x', 0), 
+                        first_overflow.get('y', 0), 
+                        first_overflow.get('width', 100), 
+                        first_overflow.get('height', 100), 
+                        f"overflow_{width}x{height}", 
+                        "responsiveness"
+                    )
+                    if screenshot:
+                        results["screenshots"].append(screenshot)
             
             results["responsive_issues"].append(
                 f"Horizontal scrolling at {width}x{height} (content width: {scroll_width}){overflow_info}"
@@ -688,10 +833,20 @@ def check_broken_links(driver, results):
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
                 if response.status_code >= 400:
+                    # Capture screenshot of the broken link
+                    screenshot = capture_element_screenshot(driver, link, "broken_link", "links")
+                    if screenshot:
+                        results["screenshots"].append(screenshot)
+                    
                     results["broken_links"].append(
                         f"Broken link ({response.status_code}): {href} | Text: '{link_info['text']}' | Element: a{'#' + link_info['id'] if link_info['id'] else ''}{'.' + link_info['class'] if link_info['class'] else ''} | Position: ({link_info['position']['x']}, {link_info['position']['y']})"
                     )
             except requests.RequestException:
+                # Capture screenshot of the inaccessible link
+                screenshot = capture_element_screenshot(driver, link, "inaccessible_link", "links")
+                if screenshot:
+                    results["screenshots"].append(screenshot)
+                
                 results["broken_links"].append(
                     f"Inaccessible link: {href} | Text: '{link_info['text']}' | Element: a{'#' + link_info['id'] if link_info['id'] else ''}{'.' + link_info['class'] if link_info['class'] else ''} | Position: ({link_info['position']['x']}, {link_info['position']['y']})"
                 )
@@ -722,20 +877,65 @@ def check_broken_images(driver, results):
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
                 if response.status_code >= 400:
+                    # Capture screenshot of the broken image
+                    screenshot = capture_element_screenshot(driver, img, "broken_image", "images")
+                    if screenshot:
+                        results["screenshots"].append(screenshot)
+                    
                     results["broken_images"].append(
                         f"Broken image ({response.status_code}): {src} | Alt: '{img_info['alt']}' | Element: img{'#' + img_info['id'] if img_info['id'] else ''}{'.' + img_info['class'] if img_info['class'] else ''} | Position: ({img_info['position']['x']}, {img_info['position']['y']}) | Size: {img_info['size']['width']}x{img_info['size']['height']}px"
                     )
             except requests.RequestException:
+                # Capture screenshot of the inaccessible image
+                screenshot = capture_element_screenshot(driver, img, "inaccessible_image", "images")
+                if screenshot:
+                    results["screenshots"].append(screenshot)
+                
                 results["broken_images"].append(
                     f"Inaccessible image: {src} | Alt: '{img_info['alt']}' | Element: img{'#' + img_info['id'] if img_info['id'] else ''}{'.' + img_info['class'] if img_info['class'] else ''} | Position: ({img_info['position']['x']}, {img_info['position']['y']}) | Size: {img_info['size']['width']}x{img_info['size']['height']}px"
                 )
 
 def get_console_errors(driver):
-    errors = driver.get_log("browser")
-    detailed_errors = []
+    """Capture both browser logs and JavaScript console errors with detailed information"""
+    print("DEBUG: get_console_errors function called")
+    errors = []
     
-    for error in errors:
-        # Get additional context about the error
+    # Get browser-level logs
+    browser_logs = driver.get_log("browser")
+    print(f"DEBUG: Found {len(browser_logs)} browser logs")
+    for log in browser_logs:
+        print(f"DEBUG: Browser log - Level: {log['level']}, Message: {log['message'][:100]}...")
+        if log['level'] in ['SEVERE', 'ERROR']:
+            error_details = driver.execute_script("""
+                return {
+                    url: window.location.href,
+                    title: document.title,
+                    userAgent: navigator.userAgent,
+                    timestamp: new Date().toISOString()
+                };
+            """)
+            
+            detailed_error = {
+                'message': log['message'],
+                'level': log['level'],
+                'timestamp': log['timestamp'],
+                'url': error_details['url'],
+                'page_title': error_details['title'],
+                'user_agent': error_details['userAgent'],
+                'source': 'browser'
+            }
+            errors.append(detailed_error)
+    
+    # Capture JavaScript console errors with line numbers and stack traces
+    js_errors = driver.execute_script("""
+        // Return any errors that were captured by our error listener
+        console.log('DEBUG: Checking for captured errors, found:', window.capturedErrors ? window.capturedErrors.length : 0);
+        return window.capturedErrors || [];
+    """)
+    
+    print(f"DEBUG: Found {len(js_errors)} JavaScript errors")
+    for js_error in js_errors:
+        print(f"DEBUG: JS error - Source: {js_error.get('source')}, Message: {js_error.get('message', 'Unknown')[:100]}...")
         error_details = driver.execute_script("""
             return {
                 url: window.location.href,
@@ -746,16 +946,22 @@ def get_console_errors(driver):
         """)
         
         detailed_error = {
-            'message': error['message'],
-            'level': error['level'],
-            'timestamp': error['timestamp'],
-            'url': error_details['url'],
+            'message': js_error.get('message', 'Unknown JavaScript error'),
+            'level': 'ERROR',
+            'timestamp': js_error.get('timestamp', error_details['timestamp']),
+            'url': js_error.get('url', error_details['url']),
             'page_title': error_details['title'],
-            'user_agent': error_details['userAgent']
+            'user_agent': error_details['userAgent'],
+            'source': 'javascript',
+            'line': js_error.get('line', 'Unknown'),
+            'column': js_error.get('column', 'Unknown'),
+            'stack': js_error.get('stack', 'No stack trace available'),
+            'filename': js_error.get('filename', 'Unknown file')
         }
-        detailed_errors.append(detailed_error)
+        errors.append(detailed_error)
     
-    return detailed_errors
+    print(f"DEBUG: Total errors captured: {len(errors)}")
+    return errors
 
 def get_performance_metrics(driver):
     metrics = driver.execute_script("""
@@ -986,7 +1192,16 @@ def generate_report(results):
     print("\n[ CONSOLE ERRORS ]")
     if results["console_errors"]:
         for error in results["console_errors"]:
-            print(f"- {error['message']}")
+            print(f"- {error['level']}: {error['message']}")
+            if error.get('source'):
+                print(f"  Source: {error['source']}")
+            if error.get('filename') and error.get('filename') != 'Unknown file':
+                print(f"  File: {error['filename']}")
+            if error.get('line') and error.get('line') != 'Unknown':
+                print(f"  Line: {error['line']}, Column: {error.get('column', 'Unknown')}")
+            if error.get('stack') and error.get('stack') != 'No stack trace available':
+                print(f"  Stack: {error['stack'][:200]}...")
+            print()
     else:
         print("No console errors found")
     
@@ -1146,8 +1361,8 @@ def generate_html_report(results, filename=None):
         </div>
         """
     
-    # Generate issues HTML
-    def generate_issues_html(issues, title, icon):
+    # Generate issues HTML with screenshots
+    def generate_issues_html(issues, title, icon, issue_type):
         if not issues:
             return f"""
             <div class="issue-section">
@@ -1157,10 +1372,27 @@ def generate_html_report(results, filename=None):
             """
         
         issues_html = f'<div class="issue-section"><h3>{icon} {title}</h3><ul class="issue-list">'
-        for issue in issues:
+        for i, issue in enumerate(issues):
             # Format the issue with better styling for detailed information
             formatted_issue = issue.replace(' | ', '</span><br><span class="issue-detail">')
-            issues_html += f'<li><span class="issue-main">{formatted_issue}</span></li>'
+            issues_html += f'<li><span class="issue-main">{formatted_issue}</span>'
+            
+            # Add screenshot if available for this issue type
+            screenshots_for_issue = [s for s in results["screenshots"] if issue_type in s['filename']]
+            if screenshots_for_issue and i < len(screenshots_for_issue):
+                screenshot = screenshots_for_issue[i]
+                issues_html += f'''
+                <div class="screenshot-container">
+                    <img src="data:image/png;base64,{screenshot['base64']}" 
+                         alt="Screenshot of {title.lower()}" 
+                         class="issue-screenshot"
+                         onclick="openScreenshotModal(this.src, '{screenshot['filename']}')">
+                    <div class="screenshot-info">
+                        <small>Click to enlarge | {screenshot['filename']}</small>
+                    </div>
+                </div>'''
+            
+            issues_html += '</li>'
         issues_html += '</ul></div>'
         return issues_html
     
@@ -1417,6 +1649,97 @@ def generate_html_report(results, filename=None):
                 margin-left: 10px;
             }}
             
+            .screenshot-container {{
+                margin-top: 15px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                overflow: hidden;
+                background: #f9fafb;
+            }}
+            
+            .issue-screenshot {{
+                width: 100%;
+                max-width: 400px;
+                height: auto;
+                cursor: pointer;
+                transition: transform 0.2s ease;
+                border-radius: 4px;
+            }}
+            
+            .issue-screenshot:hover {{
+                transform: scale(1.02);
+            }}
+            
+            .screenshot-info {{
+                padding: 8px 12px;
+                background: #f3f4f6;
+                border-top: 1px solid #e5e7eb;
+                text-align: center;
+                font-size: 0.8em;
+                color: #6b7280;
+            }}
+            
+            .screenshot-modal {{
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.8);
+                backdrop-filter: blur(5px);
+            }}
+            
+            .screenshot-modal-content {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                max-width: 90%;
+                max-height: 90%;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+                overflow: hidden;
+            }}
+            
+            .screenshot-modal img {{
+                width: 100%;
+                height: auto;
+                display: block;
+            }}
+            
+            .screenshot-modal-header {{
+                padding: 15px 20px;
+                background: #f8fafc;
+                border-bottom: 1px solid #e5e7eb;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            
+            .screenshot-modal-close {{
+                background: none;
+                border: none;
+                font-size: 24px;
+                cursor: pointer;
+                color: #6b7280;
+                padding: 0;
+                width: 30px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                transition: background-color 0.2s ease;
+            }}
+            
+            .screenshot-modal-close:hover {{
+                background-color: #e5e7eb;
+                color: #374151;
+            }}
+            
             .no-issues {{
                 color: #10B981;
                 font-weight: 500;
@@ -1539,11 +1862,11 @@ def generate_html_report(results, filename=None):
                 <h2 class="section-title">📋 Detailed Analysis</h2>
                 
                 <div class="issues-grid">
-                    {generate_issues_html(results["accessibility_issues"], "Accessibility Issues", "♿")}
-                    {generate_issues_html(results["responsive_issues"], "Responsiveness Issues", "📱")}
-                    {generate_issues_html(results["broken_links"], "Broken Links", "🔗")}
-                    {generate_issues_html(results["broken_images"], "Broken Images", "🖼️")}
-                    {generate_issues_html([f"{error['level'].upper()}: {error['message']} | URL: {error['url']} | Page: {error['page_title']}" for error in results["console_errors"]], "Console Errors", "⚠️")}
+                    {generate_issues_html(results["accessibility_issues"], "Accessibility Issues", "♿", "accessibility")}
+                    {generate_issues_html(results["responsive_issues"], "Responsiveness Issues", "📱", "responsiveness")}
+                    {generate_issues_html(results["broken_links"], "Broken Links", "🔗", "links")}
+                    {generate_issues_html(results["broken_images"], "Broken Images", "🖼️", "images")}
+                    {generate_issues_html([f"{error['level'].upper()}: {error['message']} | Source: {error.get('source', 'Unknown')} | File: {error.get('filename', 'Unknown')} | Line: {error.get('line', 'Unknown')} | Column: {error.get('column', 'Unknown')} | URL: {error['url']} | Page: {error['page_title']}" for error in results["console_errors"]], "Console Errors", "⚠️", "console")}
                 </div>
                 
                 {recommendations_html}
@@ -1553,6 +1876,17 @@ def generate_html_report(results, filename=None):
             <div class="footer">
                 <p>Report generated on {datetime.now().strftime("%B %d, %Y at %I:%M %p")}</p>
                 <p>UI/UX Testing Tool - Comprehensive Design Analysis</p>
+            </div>
+        </div>
+        
+        <!-- Screenshot Modal -->
+        <div id="screenshotModal" class="screenshot-modal">
+            <div class="screenshot-modal-content">
+                <div class="screenshot-modal-header">
+                    <h3 id="modalTitle">Screenshot</h3>
+                    <button class="screenshot-modal-close" onclick="closeScreenshotModal()">&times;</button>
+                </div>
+                <img id="modalImage" src="" alt="Screenshot">
             </div>
         </div>
         
@@ -1568,6 +1902,36 @@ def generate_html_report(results, filename=None):
                     }}, 500);
                 }});
             }});
+            
+            // Screenshot modal functions
+            function openScreenshotModal(imageSrc, filename) {{
+                const modal = document.getElementById('screenshotModal');
+                const modalImage = document.getElementById('modalImage');
+                const modalTitle = document.getElementById('modalTitle');
+                
+                modalImage.src = imageSrc;
+                modalTitle.textContent = filename;
+                modal.style.display = 'block';
+                
+                // Close modal when clicking outside
+                modal.onclick = function(event) {{
+                    if (event.target === modal) {{
+                        closeScreenshotModal();
+                    }}
+                }};
+                
+                // Close modal with Escape key
+                document.addEventListener('keydown', function(event) {{
+                    if (event.key === 'Escape') {{
+                        closeScreenshotModal();
+                    }}
+                }});
+            }}
+            
+            function closeScreenshotModal() {{
+                const modal = document.getElementById('screenshotModal');
+                modal.style.display = 'none';
+            }}
         </script>
     </body>
     </html>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Error Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .error-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .error-list {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JavaScript Error Test Page</h1>
+        <p>This page is designed to generate various JavaScript errors for testing the error capture system.</p>
+        
+        <div class="error-section">
+            <h3>Console Errors</h3>
+            <button onclick="generateConsoleError()">Generate Console Error</button>
+            <button onclick="generateConsoleWarning()">Generate Console Warning</button>
+            <button onclick="generateConsoleInfo()">Generate Console Info</button>
+        </div>
+        
+        <div class="error-section">
+            <h3>JavaScript Runtime Errors</h3>
+            <button onclick="generateReferenceError()">Generate Reference Error</button>
+            <button onclick="generateTypeError()">Generate Type Error</button>
+            <button onclick="generateSyntaxError()">Generate Syntax Error</button>
+        </div>
+        
+        <div class="error-section">
+            <h3>Promise Errors</h3>
+            <button onclick="generatePromiseRejection()">Generate Promise Rejection</button>
+            <button onclick="generateAsyncError()">Generate Async Error</button>
+        </div>
+        
+        <div class="error-section">
+            <h3>Network Errors</h3>
+            <button onclick="generateFetchError()">Generate Fetch Error</button>
+            <button onclick="generateXHRError()">Generate XHR Error</button>
+        </div>
+        
+        <div class="error-section">
+            <h3>Captured Errors</h3>
+            <div id="errorList" class="error-list">
+                <p>Errors will appear here as they are captured...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize error capture array
+        window.capturedErrors = [];
+        
+        // Override console methods to capture errors
+        const originalConsoleError = console.error;
+        const originalConsoleWarn = console.warn;
+        const originalConsoleInfo = console.info;
+        
+        console.error = function(...args) {
+            const errorInfo = {
+                message: args.join(' '),
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                source: 'console.error'
+            };
+            window.capturedErrors.push(errorInfo);
+            displayError(errorInfo);
+            originalConsoleError.apply(console, args);
+        };
+        
+        console.warn = function(...args) {
+            const errorInfo = {
+                message: args.join(' '),
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                source: 'console.warn'
+            };
+            window.capturedErrors.push(errorInfo);
+            displayError(errorInfo);
+            originalConsoleWarn.apply(console, args);
+        };
+        
+        console.info = function(...args) {
+            const errorInfo = {
+                message: args.join(' '),
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                source: 'console.info'
+            };
+            window.capturedErrors.push(errorInfo);
+            displayError(errorInfo);
+            originalConsoleInfo.apply(console, args);
+        };
+        
+        // Global error handler
+        window.addEventListener('error', function(event) {
+            const errorInfo = {
+                message: event.message || 'Unknown error',
+                filename: event.filename || 'Unknown file',
+                line: event.lineno || 'Unknown',
+                column: event.colno || 'Unknown',
+                stack: event.error ? event.error.stack : 'No stack trace available',
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                source: 'window.error'
+            };
+            window.capturedErrors.push(errorInfo);
+            displayError(errorInfo);
+        });
+        
+        // Unhandled promise rejection handler
+        window.addEventListener('unhandledrejection', function(event) {
+            const errorInfo = {
+                message: event.reason ? event.reason.toString() : 'Unhandled promise rejection',
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                source: 'unhandledrejection'
+            };
+            window.capturedErrors.push(errorInfo);
+            displayError(errorInfo);
+        });
+        
+        function displayError(errorInfo) {
+            const errorList = document.getElementById('errorList');
+            const errorDiv = document.createElement('div');
+            errorDiv.style.border = '1px solid #ddd';
+            errorDiv.style.margin = '5px 0';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.backgroundColor = '#fff';
+            errorDiv.style.borderRadius = '3px';
+            
+            errorDiv.innerHTML = `
+                <strong>${errorInfo.source}</strong><br>
+                <span style="color: #666;">${errorInfo.message}</span><br>
+                <small style="color: #999;">${errorInfo.timestamp}</small>
+                ${errorInfo.filename ? `<br><small style="color: #999;">File: ${errorInfo.filename}:${errorInfo.line}:${errorInfo.column}</small>` : ''}
+            `;
+            
+            errorList.appendChild(errorDiv);
+        }
+        
+        // Error generation functions
+        function generateConsoleError() {
+            console.error('This is a test console error message');
+        }
+        
+        function generateConsoleWarning() {
+            console.warn('This is a test console warning message');
+        }
+        
+        function generateConsoleInfo() {
+            console.info('This is a test console info message');
+        }
+        
+        function generateReferenceError() {
+            // This will cause a ReferenceError
+            console.log(undefinedVariable);
+        }
+        
+        function generateTypeError() {
+            // This will cause a TypeError
+            const obj = null;
+            obj.someMethod();
+        }
+        
+        function generateSyntaxError() {
+            // This will cause a SyntaxError
+            eval('function test() {');
+        }
+        
+        function generatePromiseRejection() {
+            // This will cause an unhandled promise rejection
+            Promise.reject(new Error('Test promise rejection'));
+        }
+        
+        function generateAsyncError() {
+            // This will cause an async error
+            setTimeout(() => {
+                throw new Error('Test async error');
+            }, 100);
+        }
+        
+        function generateFetchError() {
+            // This will cause a fetch error
+            fetch('https://nonexistent-domain-12345.com/api/test')
+                .then(response => response.json())
+                .catch(error => {
+                    console.error('Fetch error:', error.message);
+                });
+        }
+        
+        function generateXHRError() {
+            // This will cause an XHR error
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://nonexistent-domain-12345.com/api/test', true);
+            xhr.onerror = function() {
+                console.error('XHR error occurred');
+            };
+            xhr.send();
+        }
+        
+        // Generate some errors on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                console.error('Page loaded - test error');
+                console.warn('Page loaded - test warning');
+            }, 1000);
+        });
+    </script>
+</body>
+</html> 
